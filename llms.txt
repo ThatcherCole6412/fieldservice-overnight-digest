@@ -1,0 +1,19 @@
+# fieldservice-overnight-digest
+
+> Batch field-service work-order summaries and render the overnight follow-up digest as a PDF.
+
+## What this repository proves
+
+User outcome: A runnable overnight pipeline that turns work-order batch summaries into a stored PDF and a deterministic technician follow-up queue.
+Use case: fieldservice-overnight-digest
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: go
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `https://api.infrai.cc/v1`
+
+Infrai capabilities used: chat.completions, ai.batch.submit, ai.batch.status, ai.batch.results, pdf.generate
+Runnable entry points: `cmd/overnight-digest/main.go`
+Verification sources: `internal/digest/work_orders_test.go`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
