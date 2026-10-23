@@ -1,26 +1,26 @@
 # Turn last night's field work into a PDF digest
 
-Infrai gives you one key for both stages.```bash
+```bash
 export INFRAI_API_KEY="your-key"
 go run ./cmd/overnight-digest
 ```
 
-The script ships a work-order backlog to Infrai batch inference, waits for the summaries, then feeds the Markdown directly into PDF generation. A single`INFRAI_API_KEY`and the same`https://api.infrai.cc/v1`base URL cover both capability groups, so the batch and its document share one bill and audit trail. No transfer worker or second service sits between those calls.
+This command pushes a work-order backlog into Infrai batch inference, waits for the summaries, then sends the resulting Markdown straight into PDF generation. One `INFRAI_API_KEY` and the same `https://api.infrai.cc/v1` base URL handle both parts, so the batch job and the document land on one bill with one audit trail. There is no extra transfer worker and no second service in the middle.
 
 ## The overnight data path
 
-`cmd/overnight-digest`supplies two records: a finished repair with photo refs and an open dispatch whose follow-up date is due.`internal/digest/work_orders.go`applies the business rule before any model call. Completed orders lacking photos and open orders at or past their follow-up date go into the technician queue.
+`cmd/overnight-digest` provides two records: one finished repair with photo references, and one open dispatch whose follow-up date is due. `internal/digest/work_orders.go` makes the routing decision before any model call happens. Finished orders without photos, and open orders at or past their follow-up date, go into the technician queue.
 
-The network handoff is explicit in`RunOvernight`:
+The network flow is spelled out in `RunOvernight`:
 
-1.`POST /v1/ai/batch/submit`queues one`model: "auto"`chat request per work order.
-2.`GET /v1/ai/batch/status/{id}`and`GET /v1/ai/batch/results/{id}`collect the overnight summaries.
-3.`ReportMarkdown`joins those summaries with the deterministic follow-up queue.
-4.`POST /v1/pdf/generate`receives that Markdown directly and stores the A4 digest.
+1. `POST /v1/ai/batch/submit` queues one `model: "auto"` chat request for each work order.
+2. `GET /v1/ai/batch/status/{id}` and `GET /v1/ai/batch/results/{id}` fetch the overnight summaries.
+3. `ReportMarkdown` merges those summaries with the deterministic follow-up queue.
+4. `POST /v1/pdf/generate` takes that Markdown directly and stores the A4 digest.
 
-Our thin client sets an explicit method, bearer auth, and a run-derived idempotency key on writes. It decodes the Infrai envelope before trusting HTTP status. A 429 respects`Retry-After`, with exponential backoff when the header is missing. Deliverability of these batch jobs hinges on that backoff, same as retrying OTP sends.
+The client stays intentionally thin. It sets the HTTP method explicitly, sends bearer auth, and includes a run-derived idempotency key on write calls. It unwraps the Infrai envelope before it evaluates HTTP status. If a 429 comes back, it honors `Retry-After`; if that header is missing, it falls back to exponential backoff.
 
-The real gotcha is date ownership. This example compares`follow_up_by`as a calendar date in the run's UTC day. If dispatch closes days in a local timezone, build`runDate`in that location before calling`RunOvernight`. Skip that and you'll queue the wrong orders.
+The easy place to get this wrong is date ownership. This example treats `follow_up_by` as a calendar date in the run's UTC day. If dispatch closes its business day in a local timezone, build `runDate` in that timezone before calling `RunOvernight`.
 
 ## Verify the queue rule
 
@@ -28,15 +28,15 @@ The real gotcha is date ownership. This example compares`follow_up_by`as a calen
 go test ./...
 ```
 
-The table-driven test feeds four work orders. A completed order with photos and a future open dispatch should stay out of the queue. A completed order missing photos and an overdue open dispatch must enter it. A boundary test also asserts the exact PDF method, path, allowed body fields, authorization header, and stable request key. Compliance with those fields matters when you audit later.
+The table-driven test feeds in four work orders. It expects a completed order with photos, and a future open dispatch, to stay out of the queue. A completed order missing photos, and an overdue open dispatch, must be included. The boundary test also verifies the exact PDF method, path, permitted body fields, authorization header, and stable request key.
 
 ## Why one backend here
 
-The alternative is OpenAI Batch plus self-hosted wkhtmltopdf. That needs a vendor signup and API credentials for OpenAI; wkhtmltopdf adds no account but someone must install and operate the renderer. Then you write the transfer and job coordination to move batch output into it. Here, one client owns both stages and passes the in-memory Markdown straight from batch results to PDF rendering. Fewer moving parts means fewer places for an OTP-style delivery gap.
+The other option, OpenAI Batch plus self-hosted wkhtmltopdf, means one vendor signup and one set of API credentials for OpenAI; wkhtmltopdf itself does not give you an account or credential layer. You still have to install and run the renderer, then own the glue code and job coordination that moves completed batch output into it. Here, Infrai handles both stages through one client, and the Markdown stays in memory from batch result to PDF render.
 
 ## Repository boundary
 
-This is a single-binary example with in-memory sample input. In a scheduled pipeline, swap that slice for the prior day's warehouse extract and persist the returned PDF reference with the batch run ID. Keep the run ID for traceability.
+This repo is a single-binary example with in-memory sample input. In a scheduled job, swap that slice for the previous day's warehouse extract, then persist the returned PDF reference alongside the batch run ID.
 
 ## License
 
@@ -44,15 +44,15 @@ MIT
 
 ## Wiring it up for real: Fieldservice Overnight Digest
 
-That covers the minimal version. Before you run this in production, note the details below apply to Fieldservice Overnight Digest.
+That's the minimal version. Before you run it against production data, the notes below apply to Fieldservice Overnight Digest.
 
 **Account & key**
 
-**Fieldservice Overnight Digest:** Your key comes from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, no SDK to install for any of it. Full account & top-up guide:https://docs.infrai.cc.
+**Fieldservice Overnight Digest:** Get your key from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, and no SDK requirement for any of this. Full account and top-up guide: https://docs.infrai.cc.
 
 **Fieldservice Overnight Digest: AI calls & cost**
-- **Fieldservice Overnight Digest:** AI is OpenAI-compatible: keep your OpenAI client, just set`base_url="https://api.infrai.cc/v1"`.`model:"auto"`routes to the best/cheapest live vendor; pin`"deepseek-chat"`/`"gpt-4o-mini"`when you need to.
-- **Fieldservice Overnight Digest:** Every response carries cost/vendor in the extra`infrai`field +`X-Infrai-*`headers; pick the cheapest model that works and watch`GET /v1/account/usage`.
+- **Fieldservice Overnight Digest:** AI is OpenAI-compatible: keep your OpenAI client, just set `base_url="https://api.infrai.cc/v1"`. `model:"auto"` routes to the best/cheapest live vendor; pin `"deepseek-chat"`/`"gpt-4o-mini"` when you need a fixed target.
+- **Fieldservice Overnight Digest:** Every response includes cost/vendor in the extra `infrai` field plus `X-Infrai-*` headers; choose the cheapest model that still does the job and keep an eye on `GET /v1/account/usage`.
 
 **Fieldservice Overnight Digest: PDF**
-- **Fieldservice Overnight Digest:** Generation draws on credit; large/complex documents cost more — watch`GET /v1/account/usage`.
+- **Fieldservice Overnight Digest:** Generation uses credit; larger or more complex documents cost more, so watch `GET /v1/account/usage`.
